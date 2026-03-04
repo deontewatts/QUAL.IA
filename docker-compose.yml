@@ -1,0 +1,95 @@
+# ── QUALIA Docker Compose Stack ───────────────────────────────────────────
+# Runs the full QUALIA ecosystem locally or on any Docker host.
+# For production: swap the 'env_file' for a secrets manager integration
+# and point the 'qualia_memory' volume at an EFS/NFS mount for persistence.
+#
+# Usage:
+#   docker-compose up                    # foreground (dev)
+#   docker-compose up -d                 # detached (prod)
+#   docker-compose logs -f qualia-api    # follow logs
+#   docker-compose down -v               # teardown including volumes
+
+version: "3.9"
+
+services:
+
+  # ── QUALIA API ─────────────────────────────────────────────────────────
+  qualia-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: qualia-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env          # your local .env (gitignored)
+    environment:
+      - ENV=production
+      - QUALIA_DB_DIR=/data/qualia_memory
+      - MOCK_DATA=false
+    volumes:
+      # Persistent memory storage — survives container restarts
+      - qualia_memory:/data/qualia_memory
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - redis
+    networks:
+      - qualia-net
+
+  # ── Redis — State Sharing ──────────────────────────────────────────────
+  # Used to share QPT engine state across multiple API containers (horizontal scale)
+  # and for rate limiting. You can remove this for single-container deployments.
+  redis:
+    image: redis:7-alpine
+    container_name: qualia-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - qualia-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Nginx Reverse Proxy ────────────────────────────────────────────────
+  # Handles SSL termination, rate limiting at the network level, and
+  # routes traffic to the QUALIA API. Swap the self-signed cert for
+  # Let's Encrypt certbot in production.
+  nginx:
+    image: nginx:alpine
+    container_name: qualia-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - qualia-api
+    networks:
+      - qualia-net
+
+volumes:
+  qualia_memory:
+    driver: local
+    # Production: use an NFS or EFS volume for persistence across host restarts
+    # driver_opts:
+    #   type: nfs
+    #   o: "addr=your-efs-dns,nfsvers=4.1"
+    #   device: ":/qualia-memory"
+
+  redis_data:
+    driver: local
+
+networks:
+  qualia-net:
+    driver: bridge
