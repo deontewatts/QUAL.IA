@@ -25,11 +25,12 @@ import logging
 import time
 from typing import Optional
 
-from core.qualia_core   import QPTEngine, EmotionalState
-from core.habit_engine  import HabitEngine
-from core.ethics_guard  import EthicsGuard
-from memory.qualia_memory import QUALIAMemory
-from volley.norcal_intel  import NorCalIntelEngine
+from qualia_core   import QPTEngine, EmotionalState
+from habit_engine  import HabitEngine
+from ethics_guard  import EthicsGuard
+from qualia_memory import QUALIAMemory
+# from volley.norcal_intel  # TODO: add norcal_intel.py
+# from norcal_intel  import NorCalIntelEngine
 
 logger = logging.getLogger("qualia.agent")
 
